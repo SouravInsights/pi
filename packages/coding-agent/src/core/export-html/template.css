@@ -247,7 +247,9 @@
     #content {
       flex: 1;
       min-width: 0;
-      overflow-y: auto;
+      /* Clip long unbreakable content at the column edge. Must be clip, not
+         hidden/auto, so position: sticky children keep working. */
+      overflow-x: clip;
       padding: var(--line-height) calc(var(--line-height) * 2);
       display: flex;
       flex-direction: column;
@@ -259,11 +261,21 @@
       max-width: 800px;
     }
 
+    /* Sticky controls bar, stays on top while scrolling */
+    #sticky-controls {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: var(--body-bg);
+      padding-top: calc(var(--line-height) / 2);
+      border-bottom: 1px solid var(--border);
+    }
+
     /* Help bar */
     .help-bar {
       font-size: 11px;
       color: var(--warning);
-      margin-bottom: var(--line-height);
+      padding-bottom: calc(var(--line-height) / 2);
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -271,8 +283,13 @@
       gap: 12px;
     }
 
-    .help-hint {
-      flex: 1 1 240px;
+    .session-id {
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--muted);
     }
 
     .help-actions {
@@ -298,6 +315,27 @@
     .download-json-btn:hover {
       background: var(--hover);
       border-color: var(--borderAccent);
+    }
+
+    .header-toggle-btn[aria-pressed="true"] {
+      background: var(--hover);
+      border-color: var(--borderAccent);
+    }
+
+    .header-toggle-btn:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+
+    .header-toggle-btn:disabled:hover {
+      background: var(--container-bg);
+      border-color: var(--border);
+    }
+
+    /* Keep toggle reveal targets below the sticky controls bar */
+    .thinking-block,
+    .tool-output {
+      scroll-margin-top: 56px;
     }
 
     /* Header */
@@ -1052,6 +1090,16 @@
 
       #content {
         padding: var(--line-height) 16px;
+      }
+
+      /* Leave room for the fixed hamburger button at the top left.
+         Hide the session id so the buttons fit on one row. */
+      #sticky-controls .help-bar {
+        padding-left: 36px;
+      }
+
+      #sticky-controls .session-id {
+        display: none;
       }
 
       #content > * {

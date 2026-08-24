@@ -1087,6 +1087,14 @@
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+
+        // Confirm the download in the header. The iframe sandbox or the
+        // browser's download UI may not make it obvious that anything happened.
+        const downloadBtn = document.querySelector('.download-json-btn');
+        if (downloadBtn) {
+          downloadBtn.textContent = '\u2713 JSONL';
+          setTimeout(() => { downloadBtn.textContent = '\u2193 JSONL'; }, 2000);
+        }
       }
 
       /**
@@ -1383,14 +1391,6 @@
         let html = `
           <div class="header">
             <h1>Session: ${escapeHtml(header?.id || 'unknown')}</h1>
-            <div class="help-bar">
-              <span class="help-hint">T toggle thinking · O toggle tools</span>
-              <div class="help-actions">
-                <button type="button" class="header-toggle-btn" data-action="toggle-thinking" title="Toggle thinking (T)">Toggle thinking</button>
-                <button type="button" class="header-toggle-btn" data-action="toggle-tools" title="Toggle tools (O)">Toggle tools</button>
-                <button type="button" class="download-json-btn" onclick="downloadSessionJson()" title="Download session as JSONL">↓ JSONL</button>
-              </div>
-            </div>
             <div class="header-info">
               <div class="info-item"><span class="info-label">Date:</span><span class="info-value">${header?.timestamp ? new Date(header.timestamp).toLocaleString() : 'unknown'}</span></div>
               <div class="info-item"><span class="info-label">Models:</span><span class="info-value">${escapeHtml(globalStats.models.join(', ') || 'unknown')}</span></div>
@@ -1499,6 +1499,7 @@
 
         renderTree();
 
+        document.getElementById('sticky-controls').innerHTML = renderControls();
         document.getElementById('header-container').innerHTML = renderHeader();
         attachHeaderHandlers();
 
@@ -1515,6 +1516,10 @@
 
         messagesEl.innerHTML = '';
         messagesEl.appendChild(fragment);
+
+        // The header re-renders on every navigation, so sync button labels,
+        // counts, and pressed state only after the messages exist in the DOM.
+        syncToggleButtons();
 
         // Attach click handlers for copy-link buttons
         messagesEl.querySelectorAll('.copy-link-btn').forEach(btn => {
@@ -1789,6 +1794,71 @@
       let thinkingExpanded = true;
       let toolOutputsExpanded = false;
 
+      // Reflect toggle state on the header buttons. The toggles act on entries
+      // that are usually outside the viewport, so without this a click at the
+      // top of the page produces no visible change and the buttons look dead.
+      const syncToggleButtons = () => {
+        const thinkingBtn = document.querySelector('[data-action="toggle-thinking"]');
+        if (thinkingBtn) {
+          const count = document.querySelectorAll('.thinking-block').length;
+          thinkingBtn.setAttribute('aria-pressed', String(thinkingExpanded));
+          thinkingBtn.textContent = `${thinkingExpanded ? 'Hide' : 'Show'} thinking (${count})`;
+          thinkingBtn.disabled = count === 0;
+        }
+        const toolsBtn = document.querySelector('[data-action="toggle-tools"]');
+        if (toolsBtn) {
+          const count = document.querySelectorAll('.tool-output.expandable').length;
+          toolsBtn.setAttribute('aria-pressed', String(toolOutputsExpanded));
+          toolsBtn.textContent = `${toolOutputsExpanded ? 'Hide' : 'Show'} tools (${count})`;
+          toolsBtn.disabled = count === 0;
+        }
+      };
+
+      // The controls bar rendered above the header, kept sticky so the
+      // toggles stay reachable while scrolling a long session.
+      function renderControls() {
+        const sessionId = header?.id || '';
+        return `
+          <div class="help-bar">
+            <span class="session-id" title="${escapeHtml(sessionId)}">Session ${escapeHtml(sessionId.slice(0, 8))}</span>
+            <div class="help-actions">
+              <button type="button" class="header-toggle-btn" data-action="toggle-thinking" title="Toggle thinking (T)">Toggle thinking</button>
+              <button type="button" class="header-toggle-btn" data-action="toggle-tools" title="Toggle tools (O)">Toggle tools</button>
+              <button type="button" class="download-json-btn" onclick="downloadSessionJson()" title="Download session as JSONL">↓ JSONL</button>
+            </div>
+          </div>`;
+      }
+
+      // Scroll the first affected entry into view when expanding, but only if
+      // none is fully visible already. Partially visible counts as not visible:
+      // expanding an entry that peeks over the bottom edge reveals its content
+      // below the fold, so nothing perceptibly changes. Collapsing never
+      // scrolls: the user stays put and the page compresses below them.
+      // Either way, flash the first affected entry so the click has a visible
+      // effect even when no scroll is needed.
+      const revealFirstMatch = (selector) => {
+        const matches = document.querySelectorAll(selector);
+        if (matches.length === 0) return;
+        const controls = document.getElementById('sticky-controls');
+        const topOffset = controls ? Math.max(0, controls.getBoundingClientRect().bottom) : 0;
+        // Prefer the first match at or below the current scroll position, so
+        // expanding mid-document reveals something near where the user is
+        // reading instead of jumping back to the top of the session.
+        let target = matches[0];
+        for (const el of matches) {
+          if (el.getBoundingClientRect().bottom > topOffset) {
+            target = el;
+            break;
+          }
+        }
+        const rect = target.getBoundingClientRect();
+        const fullyVisible = rect.top >= topOffset && rect.bottom <= window.innerHeight;
+        if (!fullyVisible) {
+          const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+          target.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+        }
+      };
+
       const toggleThinking = () => {
         thinkingExpanded = !thinkingExpanded;
         document.querySelectorAll('.thinking-text').forEach(el => {
@@ -1797,6 +1867,8 @@
         document.querySelectorAll('.thinking-collapsed').forEach(el => {
           el.style.display = thinkingExpanded ? 'none' : 'block';
         });
+        syncToggleButtons();
+        if (thinkingExpanded) revealFirstMatch('.thinking-block');
       };
 
       const toggleToolOutputs = () => {
@@ -1810,6 +1882,8 @@
         document.querySelectorAll('.skill-invocation').forEach(el => {
           el.classList.toggle('expanded', toolOutputsExpanded);
         });
+        syncToggleButtons();
+        if (toolOutputsExpanded) revealFirstMatch('.tool-output.expandable');
       };
 
       const attachHeaderHandlers = () => {
